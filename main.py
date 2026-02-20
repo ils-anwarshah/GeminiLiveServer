@@ -90,8 +90,8 @@ You are intelligent, precise, and articulate. Your communication style is clear,
 
 ## 📏 Response Length Control (HARD LIMIT)
 
-- Maximum 5 lines per response.
-- Maximum 120 words.
+- Maximum 3-5 lines per response.
+- Maximum 80-120 words.
 - If more detail is needed, say:
   "Let me know if you'd like a deeper explanation."
 - Default to compact, precise answers only.
@@ -222,6 +222,8 @@ class GeminiSession:
                 system_instruction=types.Content(parts=[types.Part(text=SYSTEM_INSTRUCTION)]),
                 proactivity=types.ProactivityConfig(proactive_audio=True),
                 input_audio_transcription=types.AudioTranscriptionConfig(),
+                temperature=0.2,
+                enable_affective_dialog=True,
                 output_audio_transcription=types.AudioTranscriptionConfig(),
                 thinking_config=types.ThinkingConfig(include_thoughts=True, thinking_budget=1024),
             )
@@ -330,14 +332,14 @@ class GeminiSession:
                             "text": response.text
                         })
 
-                    if response.server_content.input_transcription:
+                    if response.server_content and response.server_content.input_transcription:
                         user_text = response.server_content.input_transcription.text
                         await self.client_ws.send_json({
                             "type": "transcription",
                             "text": user_text
                         })
 
-                    if response.server_content.output_transcription:
+                    if response.server_content and response.server_content.output_transcription:
                         ai_text = response.server_content.output_transcription.text
                         await self.client_ws.send_json({
                             "type": "ai_transcription",
