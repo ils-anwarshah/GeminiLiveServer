@@ -55,6 +55,7 @@ if not GOOGLE_API_KEY:
 MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
 SAMPLE_RATE = 16000  # Input audio sample rate
 OUTPUT_SAMPLE_RATE = 24000  # Output audio sample rate
+DEFAULT_VOICE_NAME = os.getenv("DEFAULT_VOICE_NAME", "Aoede")
 
 # Initialize Gemini client
 client = genai.Client(api_key=GOOGLE_API_KEY, http_options={"api_version": "v1alpha"})
@@ -203,12 +204,13 @@ TOOLS = [
 class GeminiSession:
     """Manages a Gemini Live API session using the official SDK."""
     
-    def __init__(self, client_ws: WebSocket):
+    def __init__(self, client_ws: WebSocket, voice_name: str = DEFAULT_VOICE_NAME):
         self.client_ws = client_ws
         self.session = None
         self.session_manager = None
         self.is_active = False
         self.receive_task = None
+        self.voice_name = voice_name
         
     async def connect(self):
         """Connect to Gemini Live API using the official SDK."""
@@ -222,6 +224,13 @@ class GeminiSession:
                 system_instruction=types.Content(parts=[types.Part(text=SYSTEM_INSTRUCTION)]),
                 proactivity=types.ProactivityConfig(proactive_audio=True),
                 input_audio_transcription=types.AudioTranscriptionConfig(),
+                speech_config=types.SpeechConfig(
+                    voice_config=types.VoiceConfig(
+                        prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                            voice_name=self.voice_name
+                        )
+                    )
+                ),
                 temperature=0.2,
                 enable_affective_dialog=True,
                 output_audio_transcription=types.AudioTranscriptionConfig(),
@@ -239,7 +248,8 @@ class GeminiSession:
             # Notify client of successful connection
             await self.client_ws.send_json({
                 "type": "connected",
-                "message": "Successfully connected to Gemini"
+                "message": "Successfully connected to Gemini",
+                "voice": self.voice_name
             })
             
             return True
@@ -395,7 +405,35 @@ async def websocket_endpoint(websocket: WebSocket):
     client_address = websocket.client
     logger.info(f"WebSocket connection established from {client_address}")
     
-    session = GeminiSession(websocket)
+    requested_voice = None
+    pending_message = None
+
+    try:
+        initial_message = await asyncio.wait_for(websocket.receive_text(), timeout=1.0)
+        initial_data = json.loads(initial_message)
+        pending_message = initial_data
+
+        if isinstance(initial_data, dict):
+            potential_voice = initial_data.get("voice") or initial_data.get("voice_name")
+            if isinstance(potential_voice, str) and potential_voice.strip():
+                requested_voice = potential_voice.strip()
+
+            if initial_data.get("type") in {"start", "start_session"}:
+                pending_message = None
+    except asyncio.TimeoutError:
+        pass
+    except WebSocketDisconnect:
+        logger.info("Client disconnected before session start")
+        return
+    except json.JSONDecodeError:
+        logger.warning("Initial WebSocket message was not valid JSON; continuing with default voice")
+    except Exception as e:
+        logger.warning(f"Error parsing initial WebSocket message: {e}")
+
+    selected_voice = requested_voice or DEFAULT_VOICE_NAME
+    logger.info(f"Using voice: {selected_voice}")
+
+    session = GeminiSession(websocket, voice_name=selected_voice)
     
     try:
         # Connect to Gemini
@@ -408,8 +446,12 @@ async def websocket_endpoint(websocket: WebSocket):
         while session.is_active:
             try:
                 # Receive message from client
-                message = await websocket.receive_text()
-                data = json.loads(message)
+                if pending_message is not None:
+                    data = pending_message
+                    pending_message = None
+                else:
+                    message = await websocket.receive_text()
+                    data = json.loads(message)
                 
                 if data.get("type") == "audio_chunk":
                     audio_base64 = data.get("data")

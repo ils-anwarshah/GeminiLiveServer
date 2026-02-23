@@ -26,11 +26,13 @@ pip install -r requirements.txt
 3. Set your Google API key:
 ```bash
 export GOOGLE_API_KEY="your_api_key_here"
+export DEFAULT_VOICE_NAME="Aoede"  # optional
 ```
 
 Or create a `.env` file:
 ```bash
 GOOGLE_API_KEY=your_api_key_here
+DEFAULT_VOICE_NAME=Aoede
 ```
 
 ## Run
@@ -59,6 +61,16 @@ The server will be available at:
 ## WebSocket Protocol
 
 ### Client -> Server
+Optional startup message (send immediately after WebSocket connect):
+```json
+{
+  "type": "start",
+  "voice": "Aoede"
+}
+```
+
+If this message is not sent (or `voice` is missing), backend uses `DEFAULT_VOICE_NAME` and falls back to `Aoede`.
+
 ```json
 {
   "type": "audio_chunk",
@@ -71,7 +83,8 @@ The server will be available at:
 ```json
 {
   "type": "connected",
-  "message": "Successfully connected to Gemini"
+  "message": "Successfully connected to Gemini",
+  "voice": "Aoede"
 }
 ```
 
